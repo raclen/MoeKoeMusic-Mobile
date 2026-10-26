@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spinner, Text, View, XStack, YStack } from 'tamagui';
 
 import { Artwork } from '@/components/ui/artwork';
-import { BannerCarousel } from '@/components/ui/banner-carousel';
+import { HeartRadioCard } from '@/components/ui/heart-radio-card';
 import { PlaylistCard } from '@/components/ui/playlist-card';
 import { RankCard } from '@/components/ui/rank-card';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -136,7 +136,6 @@ export default function HomeScreen() {
     (contentWidth - 14 * (playlistColumns - 1)) / playlistColumns
   );
   const bannerWidth = Math.min(contentWidth, 560);
-  const bannerHeight = Math.round(bannerWidth * 0.44);
   const songCardWidth = Math.min(156, Math.max(136, Math.floor(contentWidth * 0.42)));
 
   async function refreshHome(mode: 'initial' | 'refresh' = 'initial') {
@@ -298,33 +297,7 @@ export default function HomeScreen() {
           </XStack>
         ) : null}
 
-        {homeData.banners.length ? (
-          <BannerCarousel
-            banners={homeData.banners}
-            bannerWidth={bannerWidth}
-            bannerHeight={bannerHeight}
-            onPressBanner={(banner) => {
-              if (banner.playlistGid) {
-                router.push({
-                  pathname: '/playlist/[id]',
-                  params: {
-                    id: banner.playlistGid,
-                    name: banner.title,
-                    cover: banner.imageUrl ?? '',
-                  },
-                });
-                return;
-              }
-
-              if (banner.linkUrl) {
-                router.push({
-                  pathname: '/web',
-                  params: { url: banner.linkUrl, title: banner.title },
-                });
-              }
-            }}
-          />
-        ) : null}
+        <HeartRadioCard cardWidth={bannerWidth} />
 
         {homeData.dailySongs.length ? (
           <YStack gap={12}>
