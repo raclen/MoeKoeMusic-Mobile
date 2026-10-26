@@ -1,3 +1,7 @@
+import * as SecureStore from 'expo-secure-store';
+
+import { showToast } from '@/components/ui/toast';
+import { getSettingsState } from '@/features/settings/store';
 import { pickNumber, pickText, toRecord } from '@/lib/api-parse';
 import { bootstrapMobileApi, getApiSession, mobileApi } from '@/lib/kugou-api';
 
@@ -9,8 +13,52 @@ export type VipSignInResult = {
   canUpgrade?: boolean;
 };
 
+const VIP_CLAIM_STORAGE_PREFIX = 'moekoe.vip.last_claim.';
+const inMemoryClaimDate: Record<string, string> = {};
+
+export function getTodayDateString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getClaimKey(userid?: string): string {
+  return `${VIP_CLAIM_STORAGE_PREFIX}${userid || getApiSession().userid || 'default'}`;
+}
+
+export async function isVipClaimedToday(userid?: string): Promise<boolean> {
+  const today = getTodayDateString();
+  const user = userid || getApiSession().userid || 'default';
+  if (inMemoryClaimDate[user] === today) {
+    return true;
+  }
+  try {
+    const stored = await SecureStore.getItemAsync(getClaimKey(user));
+    if (stored === today) {
+      inMemoryClaimDate[user] = today;
+      return true;
+    }
+  } catch {
+    // Ignore storage read failures.
+  }
+  return false;
+}
+
+export async function markVipClaimedToday(userid?: string): Promise<void> {
+  const today = getTodayDateString();
+  const user = userid || getApiSession().userid || 'default';
+  inMemoryClaimDate[user] = today;
+  try {
+    await SecureStore.setItemAsync(getClaimKey(user), today);
+  } catch {
+    // Ignore storage write failures.
+  }
+}
+
 function todayKey(): string {
-  return new Date().toISOString().split('T')[0];
+  return getTodayDateString();
 }
 
 /** 提取酷狗返回体里的错误码，兼容 { error_code } 与包在 body 里的两种形态。 */
@@ -45,6 +93,7 @@ export async function signInDailyVip(): Promise<VipSignInResult> {
     const response = await mobileApi.youth_day_vip({ receive_day: todayKey() });
     const body = toRecord(response.body);
     if (pickNumber(body.status) === 1) {
+      await markVipClaimedToday();
       return { message: '签到成功，获得 1 天畅听 VIP', alreadyDone: false, canUpgrade: true };
     }
     const msg = pickText(body.error_msg);
@@ -52,6 +101,7 @@ export async function signInDailyVip(): Promise<VipSignInResult> {
   } catch (error) {
     const code = pickErrorCode(error);
     if (code === 131001) {
+      await markVipClaimedToday();
       return { message: '你今天已经签到过了', alreadyDone: true, canUpgrade: true };
     }
     if (code === 20028) {
@@ -75,6 +125,7 @@ export async function upgradeDailyVip(): Promise<VipSignInResult> {
     });
     const body = toRecord(response.body);
     if (pickNumber(body.status) === 1) {
+      await markVipClaimedToday();
       return { message: '升级成功，获得 1 天概念版 VIP', alreadyDone: false };
     }
     const msg = pickText(body.error_msg);
@@ -82,6 +133,7 @@ export async function upgradeDailyVip(): Promise<VipSignInResult> {
   } catch (error) {
     const code = pickErrorCode(error);
     if (code === 131001) {
+      await markVipClaimedToday();
       return { message: '你今天已经签到过了', alreadyDone: true };
     }
     if (code === 20028) {
@@ -89,5 +141,60 @@ export async function upgradeDailyVip(): Promise<VipSignInResult> {
     }
     const msg = pickText(toRecord((error as Record<string, unknown>)?.body).error_msg);
     throw new Error(msg || '升级 VIP 失败，一天仅限一次');
+  }
+}
+
+let autoClaimingInProgress = false;
+
+/**
+ * 每日打开应用自动签到领取 VIP。
+ * 遵循设置中的开关，一天仅执行一次，避免重复请求。
+ */
+export async function runDailyAutoClaim(options?: {
+  force?: boolean;
+  silent?: boolean;
+}): Promise<boolean> {
+  if (autoClaimingInProgress) {
+    return false;
+  }
+
+  const settings = getSettingsState();
+  if (!settings.autoClaimVip && !options?.force) {
+    return false;
+  }
+
+  autoClaimingInProgress = true;
+  try {
+    await bootstrapMobileApi();
+    const session = getApiSession();
+    if (!session.userid || session.userid === '0' || !session.token) {
+      return false;
+    }
+
+    const alreadyClaimed = await isVipClaimedToday(session.userid);
+    if (alreadyClaimed && !options?.force) {
+      return false;
+    }
+
+    const result = await signInDailyVip();
+    await markVipClaimedToday(session.userid);
+
+    if (result.canUpgrade) {
+      try {
+        await upgradeDailyVip();
+      } catch {
+        // 静默升级失败不阻断整体流程
+      }
+    }
+
+    if (!result.alreadyDone && !options?.silent) {
+      showToast('已自动完成今日 VIP 签到 ✨');
+    }
+    return true;
+  } catch {
+    // 自动领取遇到网络等异常静默处理，避免影响正常使用
+    return false;
+  } finally {
+    autoClaimingInProgress = false;
   }
 }

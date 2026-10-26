@@ -15,8 +15,14 @@ import {
   isLoggedIn,
   type UserProfile,
 } from '@/features/account/user-api';
-import { signInDailyVip, upgradeDailyVip } from '@/features/account/vip-api';
+import {
+  isVipClaimedToday,
+  runDailyAutoClaim,
+  signInDailyVip,
+  upgradeDailyVip,
+} from '@/features/account/vip-api';
 import { libraryActions, useLibrary, type LibraryPlaylist } from '@/features/library/store';
+import { getSettingsState } from '@/features/settings/store';
 import { MaxContentWidth } from '@/constants/theme';
 import { useDockContentInset } from '@/hooks/use-dock-inset';
 import { usePalette } from '@/hooks/use-palette';
@@ -203,6 +209,7 @@ export default function MeScreen() {
   });
   const [createOpen, setCreateOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [claimedToday, setClaimedToday] = useState(false);
   // 创建的歌单默认展开，收藏的歌单默认收起
   const [createdOpen, setCreatedOpen] = useState(true);
   const [collectedOpen, setCollectedOpen] = useState(false);
@@ -212,6 +219,7 @@ export default function MeScreen() {
     setSigningIn(true);
     try {
       const result = await upgradeDailyVip();
+      setClaimedToday(true);
       showToast(result.message);
       if (!result.alreadyDone) {
         void load('refresh');
@@ -226,12 +234,13 @@ export default function MeScreen() {
   }, []);
 
   const handleSignIn = useCallback(async () => {
-    if (signingIn) {
+    if (signingIn || claimedToday) {
       return;
     }
     setSigningIn(true);
     try {
       const result = await signInDailyVip();
+      setClaimedToday(true);
       if (!result.alreadyDone) {
         void load('refresh');
       }
@@ -251,7 +260,7 @@ export default function MeScreen() {
     }
     // load 在下方定义，用 ref 稳定引用即可；此处依赖 signingIn 足够。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signingIn, handleUpgrade]);
+  }, [signingIn, claimedToday, handleUpgrade]);
 
   const load = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     const requestId = ++requestIdRef.current;
@@ -270,6 +279,7 @@ export default function MeScreen() {
 
       if (!isLoggedIn()) {
         libraryActions.reset();
+        setClaimedToday(false);
         if (requestId !== requestIdRef.current) return;
         startTransition(() => {
           setState({
@@ -293,6 +303,15 @@ export default function MeScreen() {
       if (profileResult.status === 'rejected') {
         throw profileResult.reason;
       }
+
+      let claimed = await isVipClaimedToday(profileResult.value.userid);
+      if (!claimed && getSettingsState().autoClaimVip) {
+        const didAutoClaim = await runDailyAutoClaim();
+        if (didAutoClaim) {
+          claimed = true;
+        }
+      }
+      setClaimedToday(claimed);
 
       startTransition(() => {
         setState({
@@ -444,30 +463,25 @@ export default function MeScreen() {
                   ) : null}
                 </YStack>
 
-                <XStack gap={10} marginTop={14}>
-                  {[
-                    { label: '关注', value: String(profile.follows) },
-                    { label: '粉丝', value: String(profile.fans) },
-                    { label: '听歌时长', value: formatListenTime(profile.listenMinutes) },
-                  ].map((stat) => (
-                    <YStack
-                      key={stat.label}
-                      flex={1}
-                      alignItems="center"
-                      gap={3}
-                      paddingVertical={12}
-                      borderRadius={16}
-                      backgroundColor={palette.card}
-                      borderWidth={StyleSheet.hairlineWidth}
-                      borderColor={palette.border}>
-                      <Text color={palette.text} fontSize={15} fontWeight="700">
-                        {stat.value}
-                      </Text>
-                      <Text color={palette.textTertiary} fontSize={11.5}>
-                        {stat.label}
-                      </Text>
-                    </YStack>
-                  ))}
+                <XStack
+                  marginTop={14}
+                  alignItems="center"
+                  justifyContent="space-between"
+                  paddingHorizontal={16}
+                  paddingVertical={12}
+                  borderRadius={16}
+                  backgroundColor={palette.card}
+                  borderWidth={StyleSheet.hairlineWidth}
+                  borderColor={palette.border}>
+                  <XStack alignItems="center" gap={8}>
+                    <Ionicons name="time-outline" size={16} color={palette.textSecondary} />
+                    <Text color={palette.textSecondary} fontSize={13} fontWeight="500">
+                      听歌时长
+                    </Text>
+                  </XStack>
+                  <Text color={palette.text} fontSize={15} fontWeight="700">
+                    {formatListenTime(profile.listenMinutes)}
+                  </Text>
                 </XStack>
 
                 <XStack
@@ -477,25 +491,31 @@ export default function MeScreen() {
                   gap={7}
                   height={44}
                   borderRadius={16}
-                  backgroundColor={palette.vipSoft}
+                  backgroundColor={claimedToday ? palette.cardAlt : palette.vipSoft}
                   borderWidth={StyleSheet.hairlineWidth}
-                  borderColor={palette.vip}
+                  borderColor={claimedToday ? palette.border : palette.vip}
                   opacity={signingIn ? 0.6 : 1}
                   transition="quickest"
-                  pressStyle={{ opacity: 0.75, scale: 0.99 }}
-                  onPress={() => void handleSignIn()}>
+                  pressStyle={claimedToday ? undefined : { opacity: 0.75, scale: 0.99 }}
+                  disabled={claimedToday || signingIn}
+                  onPress={claimedToday ? undefined : () => void handleSignIn()}>
                   {signingIn ? (
                     <Spinner size="small" color={palette.vip} />
+                  ) : claimedToday ? (
+                    <Ionicons name="checkmark-circle" size={16} color={palette.textTertiary} />
                   ) : (
                     <Ionicons name="gift" size={16} color={palette.vip} />
                   )}
-                  <Text color={palette.vip} fontSize={14} fontWeight="700">
-                    {signingIn ? '签到中…' : '签到领取 VIP'}
+                  <Text
+                    color={claimedToday ? palette.textTertiary : palette.vip}
+                    fontSize={14}
+                    fontWeight="700">
+                    {signingIn ? '签到中…' : claimedToday ? '已领取' : '签到领取 VIP'}
                   </Text>
                 </XStack>
               </YStack>
 
-              <XStack gap={10}>
+              <XStack>
                 <QuickEntryCard
                   icon="heart"
                   gradient={[palette.gradientStart, palette.gradientEnd]}
@@ -508,13 +528,6 @@ export default function MeScreen() {
                       showToast('还没有"我喜欢"歌单');
                     }
                   }}
-                />
-                <QuickEntryCard
-                  icon="cloud"
-                  gradient={['#5EA8FF', '#3E7BFA']}
-                  title="我的云盘"
-                  subtitle="上传的音乐"
-                  onPress={() => router.push('/cloud')}
                 />
               </XStack>
 

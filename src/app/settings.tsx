@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, View, XStack, YStack } from 'tamagui';
 
@@ -10,6 +10,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { ACCENT_PRESETS, getPalette, type AccentPreset } from '@/constants/accents';
 import { MaxContentWidth, type SchemeName } from '@/constants/theme';
+import { runDailyAutoClaim } from '@/features/account/vip-api';
 import { isLoggedIn } from '@/features/account/user-api';
 import { libraryActions } from '@/features/library/store';
 import { settingsActions, useSettings, type ThemeMode } from '@/features/settings/store';
@@ -86,6 +87,47 @@ function AccentSwatch({
   );
 }
 
+function SettingsSwitchRow({
+  label,
+  description,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  description?: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  const palette = usePalette();
+
+  return (
+    <XStack
+      alignItems="center"
+      justifyContent="space-between"
+      minHeight={52}
+      paddingVertical={10}
+      paddingHorizontal={14}
+      gap={12}>
+      <YStack flex={1} gap={2}>
+        <Text color={palette.text} fontSize={14.5} fontWeight="500">
+          {label}
+        </Text>
+        {description ? (
+          <Text color={palette.textTertiary} fontSize={12} lineHeight={16}>
+            {description}
+          </Text>
+        ) : null}
+      </YStack>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: palette.cardAlt, true: palette.accent }}
+        thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
+      />
+    </XStack>
+  );
+}
+
 function SettingsRow({
   label,
   value,
@@ -135,7 +177,7 @@ export default function SettingsScreen() {
   const scheme = useEffectiveScheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { themeMode, accentId } = useSettings();
+  const { themeMode, accentId, autoClaimVip } = useSettings();
   const [loggedIn, setLoggedIn] = useState(() => isLoggedIn());
   const [aboutVisible, setAboutVisible] = useState(false);
   const version = Constants.expoConfig?.version ?? '';
@@ -229,6 +271,29 @@ export default function SettingsScreen() {
                   ))}
                 </XStack>
               </YStack>
+            </YStack>
+          </YStack>
+
+          <YStack gap={10}>
+            <SectionHeader title="功能" />
+            <YStack
+              backgroundColor={palette.card}
+              borderRadius={20}
+              borderWidth={StyleSheet.hairlineWidth}
+              borderColor={palette.border}
+              paddingVertical={4}
+              overflow="hidden">
+              <SettingsSwitchRow
+                label="自动领取 VIP"
+                description="每天打开应用时自动签到领取 1 天 VIP"
+                value={autoClaimVip}
+                onValueChange={(enabled) => {
+                  settingsActions.setAutoClaimVip(enabled);
+                  if (enabled) {
+                    void runDailyAutoClaim();
+                  }
+                }}
+              />
             </YStack>
           </YStack>
 

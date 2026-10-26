@@ -10,12 +10,14 @@ export type SettingsState = {
   hydrated: boolean;
   themeMode: ThemeMode;
   accentId: AccentPresetId;
+  autoClaimVip: boolean;
 };
 
 const INITIAL_SETTINGS_STATE: SettingsState = {
   hydrated: false,
   themeMode: 'system',
   accentId: DEFAULT_ACCENT_ID,
+  autoClaimVip: true,
 };
 
 function createStore<T extends object>(initial: T) {
@@ -68,6 +70,10 @@ export function hydrateSettings(): Promise<void> {
       settingsStore.setState({
         themeMode: stored && isThemeMode(stored.themeMode) ? stored.themeMode : 'system',
         accentId: stored && isAccentPresetId(stored.accentId) ? stored.accentId : DEFAULT_ACCENT_ID,
+        autoClaimVip:
+          stored && typeof stored.autoClaimVip === 'boolean'
+            ? stored.autoClaimVip
+            : INITIAL_SETTINGS_STATE.autoClaimVip,
         hydrated: true,
       });
     })().catch(() => {
@@ -78,8 +84,8 @@ export function hydrateSettings(): Promise<void> {
 }
 
 function persist() {
-  const { themeMode, accentId } = settingsStore.getState();
-  void writeStoredAppearance({ themeMode, accentId });
+  const { themeMode, accentId, autoClaimVip } = settingsStore.getState();
+  void writeStoredAppearance({ themeMode, accentId, autoClaimVip });
 }
 
 export const settingsActions = {
@@ -91,7 +97,23 @@ export const settingsActions = {
     settingsStore.setState({ accentId });
     persist();
   },
+  setAutoClaimVip(autoClaimVip: boolean) {
+    settingsStore.setState({ autoClaimVip });
+    persist();
+  },
 };
+
+export function getSettingsState(): SettingsState {
+  return settingsStore.getState();
+}
+
+export function useAutoClaimVip(): boolean {
+  return useSyncExternalStore(
+    settingsStore.subscribe,
+    () => settingsStore.getState().autoClaimVip,
+    () => INITIAL_SETTINGS_STATE.autoClaimVip
+  );
+}
 
 export function useSettings(): SettingsState {
   return useSyncExternalStore(

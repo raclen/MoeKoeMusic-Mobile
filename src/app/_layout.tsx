@@ -8,6 +8,7 @@ import { TamaguiProvider } from 'tamagui';
 
 import { hydrateSettings, useSettingsHydrated } from '@/features/settings/store';
 import { ToastHost } from '@/components/ui/toast';
+import { runDailyAutoClaim } from '@/features/account/vip-api';
 import { useEffectiveScheme, usePalette } from '@/hooks/use-palette';
 import { tamaguiConfig } from '../../tamagui.config';
 
@@ -37,6 +38,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (hydrated) {
       void SplashScreen.hideAsync().catch(() => undefined);
+      void runDailyAutoClaim();
     }
   }, [hydrated]);
 
