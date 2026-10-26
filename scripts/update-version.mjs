@@ -46,7 +46,11 @@ async function main() {
     throw new Error('expo.android.versionCode must be a positive integer.');
   }
 
-  const nextVersion = incrementVersion(currentVersion);
+  const customVersion = process.argv[2];
+  const nextVersion =
+    customVersion && versionPattern.test(customVersion)
+      ? customVersion
+      : incrementVersion(currentVersion);
   const nextVersionCode = currentVersionCode + 1;
   const releaseTag = `v${nextVersion}`;
   const releaseMessage = `chore(release): ${releaseTag}`;
