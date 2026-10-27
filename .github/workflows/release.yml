@@ -147,7 +147,7 @@ jobs:
           path: dist/*
 
   release:
-    if: github.ref_type == 'tag'
+    if: always() && github.ref_type == 'tag' && (needs.build-android.result == 'success' || needs.build-ios.result == 'success')
     needs: [build-android, build-ios]
     runs-on: ubuntu-latest
 
@@ -194,4 +194,4 @@ jobs:
           name: Release ${{ github.ref_name }}
           body_path: RELEASE_CHANGELOG.md
           files: dist/*
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
